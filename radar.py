@@ -35,6 +35,9 @@ COMPETITIONS_PATH = os.path.join(BASE, "competitions.json")
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/131.0 Safari/537.36")
 
+# 云端跑在 UTC，展示统一按北京时间
+CST = timezone(timedelta(hours=8))
+
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
@@ -363,14 +366,14 @@ def load_items(limit=600):
         out.append({
             "title": r[0], "link": r[1], "source": r[2], "category": r[3],
             "summary": r[4] or "", "ts": r[5],
-            "published": datetime.fromisoformat(r[5]).astimezone().strftime("%m-%d"),
+            "published": datetime.fromisoformat(r[5]).astimezone(CST).strftime("%m-%d"),
             "starred": bool(r[6]),
             "importance": r[7] or 0,
             "topic": r[8] or "",
             "one_line": r[9] or "",
             "why": r[10] or "",
             "tags": tags,
-            "new": r[12][:10] == datetime.now(timezone.utc).isoformat()[:10],
+            "new": datetime.fromisoformat(r[12]).astimezone(CST).date() == datetime.now(CST).date(),
         })
     return out
 
@@ -453,7 +456,7 @@ def build():
     items = load_items()
     picked = pick_daily(items)
     contests = load_competitions()
-    updated = datetime.now().strftime("%Y-%m-%d %H:%M")
+    updated = datetime.now(CST).strftime("%Y-%m-%d %H:%M")
     ai_ready = sum(1 for i in items if i["importance"])
 
     with open(TEMPLATE_PATH, encoding="utf-8") as f:
