@@ -77,12 +77,13 @@ python radar.py --build   # 不联网，只用已有数据重建看板
 云端：`.github/workflows/daily.yml`，每天 UTC 00:00（北京时间 08:00）执行，
 跑完自动把看板提交回仓库，GitHub Pages 随即更新。电脑关机也照常更新。
 
-本地：Windows 计划任务 `PM-Radar-Daily` 每天 08:30 跑一次（需要在开机状态）。
+本地：原本的 Windows 计划任务 `PM-Radar-Daily` 已删除，避免和云端重复跑。
+需要本地兜底时，用下面的命令重新注册即可。
 
 ```powershell
-schtasks /Query  /TN "PM-Radar-Daily" /V /FO LIST
+schtasks /Create /TN "PM-Radar-Daily" /SC DAILY /ST 08:30 /F `
+  /TR "\"C:\Users\grey\Documents\Trae-CN\default\pm-radar\daily.bat\""
 schtasks /Run    /TN "PM-Radar-Daily"
-schtasks /Change /TN "PM-Radar-Daily" /ST 07:30
 schtasks /Delete /TN "PM-Radar-Daily" /F
 ```
 
