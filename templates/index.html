@@ -1,0 +1,351 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>产品雷达 · PM Radar</title>
+<style>
+  :root {
+    --bg: #FAF8F5;
+    --card: #FFFFFF;
+    --ink: #1F2328;
+    --body: #4B5563;
+    --muted: #8A8580;
+    --line: #E8E3DA;
+    --accent: #B45309;
+    --accent-soft: #FDF3E7;
+    --radius: 16px;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB",
+                 -apple-system, BlinkMacSystemFont, sans-serif;
+    line-height: 1.78;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 0 20px; }
+
+  /* ---------- 头部 ---------- */
+  header { padding: 46px 0 10px; }
+  h1 { font-size: 32px; margin: 0 0 12px; letter-spacing: -0.6px; font-weight: 700; }
+  h1 span { color: var(--accent); }
+  .sub { color: var(--muted); font-size: 13.5px; margin: 0; line-height: 1.9; }
+  .sub b { color: var(--ink); font-weight: 600; }
+  .sub .dot { margin: 0 6px; color: #D5CEC3; }
+
+  h2 {
+    font-size: 16px; margin: 40px 0 14px; font-weight: 600;
+    display: flex; align-items: center; gap: 9px;
+  }
+  h2::before { content: ""; width: 4px; height: 17px; border-radius: 2px; background: var(--accent); }
+  h2 em { font-style: normal; font-weight: 400; font-size: 13px; color: var(--muted); }
+
+  /* ---------- 比赛 ---------- */
+  .contests { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+  .contest { background: var(--card); border: 1px solid var(--line);
+             border-radius: var(--radius); padding: 16px 18px; }
+  .contest .top { display: flex; justify-content: space-between; align-items: baseline;
+                  gap: 10px; margin-bottom: 6px; }
+  .contest .name { font-weight: 600; font-size: 14.5px; line-height: 1.55; }
+  .contest .org { color: var(--muted); font-size: 12.5px; margin-bottom: 8px; }
+  .contest .note { font-size: 13px; color: var(--body); line-height: 1.7; }
+  .badge { font-size: 12px; font-weight: 600; padding: 3px 9px; border-radius: 999px;
+           white-space: nowrap; background: #DBEAFE; color: #1E40AF; }
+
+  /* ---------- 工具条 ---------- */
+  .toolbar { position: sticky; top: 0; z-index: 9; background: var(--bg);
+             padding: 14px 0 12px; margin: 30px 0 4px; border-bottom: 1px solid var(--line); }
+  .tabs { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 10px;
+          scrollbar-width: none; }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab { flex: 0 0 auto; border: 1px solid var(--line); background: var(--card);
+         color: var(--body); font-size: 13.5px; padding: 6px 15px; border-radius: 999px;
+         cursor: pointer; font-family: inherit; transition: all .15s; white-space: nowrap; }
+  .tab.on { background: var(--ink); color: #fff; border-color: var(--ink); }
+  .search { display: flex; gap: 8px; align-items: center; }
+  #q { flex: 1; border: 1px solid var(--line); background: var(--card); border-radius: 999px;
+       padding: 9px 16px; font-size: 14px; font-family: inherit; outline: none; color: var(--ink);
+       min-width: 0; }
+  #q:focus { border-color: #C9C2B6; }
+  .sort { border: 1px solid var(--line); background: var(--card); color: var(--body);
+          border-radius: 999px; padding: 8px 14px; font-size: 13px; font-family: inherit;
+          cursor: pointer; white-space: nowrap; }
+
+  /* ---------- 卡片 ---------- */
+  .card { position: relative; background: var(--card); border: 1px solid var(--line);
+          border-radius: var(--radius); padding: 18px 20px; margin-bottom: 12px;
+          transition: border-color .15s, opacity .2s; }
+  .card:hover { border-color: #D6CFC2; }
+  .card.pick { border-left: 3px solid var(--accent); }
+  .card.lead { padding: 22px 22px 20px; }
+  .card.lead h3 { font-size: 19px; }
+  .card.read { opacity: .62; }
+
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+         font-size: 12.5px; color: var(--muted); margin-bottom: 8px; }
+  .chip { font-size: 11.5px; font-weight: 600; padding: 2px 9px; border-radius: 999px; }
+  .new { font-size: 11px; font-weight: 700; color: #B91C1C; background: #FEE2E2;
+         padding: 1px 7px; border-radius: 999px; }
+  .for-you { font-size: 11px; font-weight: 700; color: #6D28D9; background: #EDE9FE;
+             padding: 1px 7px; border-radius: 999px; }
+  .stars { margin-left: auto; color: var(--accent); font-size: 12px; letter-spacing: 1px; }
+
+  .card h3 { margin: 0 0 8px; font-size: 16.5px; line-height: 1.6; font-weight: 600; }
+  .card h3 a { color: var(--ink); text-decoration: none; }
+  .card h3 a:hover { color: var(--accent); }
+  .line { margin: 0 0 6px; font-size: 14.5px; color: var(--body); line-height: 1.75; }
+  .why { margin: 0; font-size: 13px; color: var(--accent); background: var(--accent-soft);
+         border-radius: 9px; padding: 7px 11px; display: inline-block; }
+  .raw { margin: 8px 0 0; font-size: 13px; color: var(--muted); line-height: 1.7; }
+  .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .tag { font-size: 11.5px; color: #6B7280; background: #F3F4F6; border-radius: 999px;
+         padding: 2px 9px; }
+
+  .fav { position: absolute; right: 14px; bottom: 14px; border: 1px solid var(--line);
+         background: transparent; color: var(--muted); font-size: 12.5px; font-family: inherit;
+         border-radius: 999px; padding: 4px 12px; cursor: pointer; transition: all .15s; }
+  .fav:hover { border-color: #C9C2B6; }
+  .fav.on { color: var(--accent); border-color: #E7C89E; background: var(--accent-soft); }
+
+  .empty { text-align: center; color: var(--muted); padding: 54px 0; font-size: 14px; }
+  footer { padding: 46px 0 64px; color: #9CA3AF; font-size: 12.5px;
+           border-top: 1px solid var(--line); margin-top: 36px; line-height: 1.9; }
+
+  @media (max-width: 560px) {
+    .wrap { padding: 0 16px; }
+    header { padding-top: 34px; }
+    h1 { font-size: 27px; }
+    .card { padding: 16px 17px; padding-bottom: 46px; }
+    .card.lead { padding: 20px 18px; padding-bottom: 48px; }
+    .card.lead h3 { font-size: 17.5px; }
+    .stars { margin-left: 0; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>产品<span>雷达</span></h1>
+    <p class="sub">
+      每天 __PICKED__ 条，AI 从 __COUNT__ 条里挑的
+      <span class="dot">·</span> 更新于 __UPDATED__
+      <span class="dot">·</span> 已加工 <b>__AI_READY__</b> 条
+    </p>
+  </header>
+
+  <h2>还没开始的比赛</h2>
+  <div class="contests" id="contests"></div>
+
+  <div class="toolbar">
+    <div class="tabs" id="tabs"></div>
+    <div class="search">
+      <input id="q" placeholder="搜索：面试 / 竞赛 / 智能体">
+      <button class="sort" id="sort">按重要度</button>
+    </div>
+  </div>
+
+  <div id="list"></div>
+
+  <footer>
+    产品雷达 · 14 个信息源 · 每天由 GLM 去重、打分、写摘要<br>
+    收藏和已读只存在本设备；内容版权归原作者
+  </footer>
+</div>
+
+<script>
+const ITEMS = __ITEMS__;
+const CONTESTS = __CONTESTS__;
+const CATS = __CATS__;
+const ORDER = __ORDER__;
+const FOCUS = __FOCUS__;
+
+const FAV_KEY = 'radar.favs.v2';
+const READ_KEY = 'radar.read.v2';
+
+function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+function load(key, def) {
+  try { return JSON.parse(localStorage.getItem(key)) || def; } catch (e) { return def; }
+}
+function save(key, val) {
+  try { localStorage.setItem(key, JSON.stringify(val)); } catch (e) {}
+}
+
+let favs = load(FAV_KEY, []);      // [{title,link,...}]
+let reads = load(READ_KEY, []);    // [link]
+const favSet = new Set(favs.map(f => f.link));
+const readSet = new Set(reads);
+
+function snapshot(it) {
+  return { title: it.title, link: it.link, source: it.source, category: it.category,
+           published: it.published, one_line: it.one_line, why: it.why,
+           topic: it.topic, tags: it.tags, importance: it.importance };
+}
+
+/* 收藏过的标签 = 兴趣信号，用来给新条目标注「为你」 */
+function interest() {
+  const count = {};
+  favs.forEach(f => {
+    (f.tags || []).concat(f.topic ? [f.topic] : []).forEach(t => {
+      count[t] = (count[t] || 0) + 1;
+    });
+  });
+  return count;
+}
+let INTEREST = interest();
+function matched(it) {
+  return (it.tags || []).concat(it.topic ? [it.topic] : [])
+    .some(t => (INTEREST[t] || 0) > 0);
+}
+
+function starBar(n) {
+  n = n || 0;
+  if (!n) return '';
+  return '★'.repeat(n) + '☆'.repeat(5 - n);
+}
+
+function cardHTML(it, lead) {
+  const meta = CATS[it.category] || ['其他', '#6B7280', '#F3F4F6'];
+  const cls = ['card'];
+  if (it.daily) cls.push('pick');
+  if (lead) cls.push('lead');
+  if (readSet.has(it.link)) cls.push('read');
+  const hasFav = favSet.has(it.link);
+
+  return `<article class="${cls.join(' ')}">
+    <div class="row">
+      <span class="chip" style="color:${meta[1]};background:${meta[2]}">${esc(meta[0])}</span>
+      <span>${esc(it.source)}</span>
+      <span>${esc(it.published)}</span>
+      ${it.new ? '<span class="new">新</span>' : ''}
+      ${matched(it) && !it.daily ? '<span class="for-you">为你</span>' : ''}
+      <span class="stars">${starBar(it.importance)}</span>
+    </div>
+    <h3><a href="${esc(it.link)}" target="_blank" rel="noopener" data-link="${esc(it.link)}">${esc(it.title)}</a></h3>
+    ${it.one_line ? `<p class="line">${esc(it.one_line)}</p>` : ''}
+    ${it.why ? `<p class="why">${esc(it.why)}</p>` : ''}
+    ${!it.one_line && it.summary ? `<p class="raw">${esc(it.summary)}</p>` : ''}
+    ${(it.tags && it.tags.length) ? `<div class="tags">${it.tags.map(t => `<span class="tag">${esc(t)}</span>`).join('')}</div>` : ''}
+    <button class="fav ${hasFav ? 'on' : ''}" data-link="${esc(it.link)}">${hasFav ? '已收藏' : '收藏'}</button>
+  </article>`;
+}
+
+function renderContests() {
+  const box = document.getElementById('contests');
+  if (!CONTESTS.length) { box.innerHTML = '<div class="empty">暂无</div>'; return; }
+  box.innerHTML = CONTESTS.map(c => {
+    const label = c.expected_start ? '预计 ' + c.expected_start : '待公布';
+    return `<div class="contest">
+      <div class="top"><div class="name">${esc(c.name)}</div><span class="badge">${esc(label)}</span></div>
+      <div class="org">${esc(c.org || '')}</div>
+      <div class="note">${esc(c.note || '')}</div>
+    </div>`;
+  }).join('');
+}
+
+let cur = 'daily';
+let kw = '';
+let sortBy = 'importance';
+
+function currentList() {
+  if (cur === 'fav') {
+    return favs.slice().reverse().map(f => ({ ...f, daily: false }));
+  }
+  if (cur === 'daily') return ITEMS.filter(i => i.daily);
+  if (cur === 'all') return ITEMS.slice();
+  return ITEMS.filter(i => i.category === cur);
+}
+
+function render() {
+  const list = document.getElementById('list');
+  let items = currentList();
+
+  if (kw) {
+    items = items.filter(it =>
+      (it.title + ' ' + (it.summary || '') + ' ' + (it.one_line || '') + ' ' +
+       (it.topic || '') + ' ' + (it.tags || []).join(' ') + ' ' + it.source)
+        .toLowerCase().includes(kw));
+  }
+
+  if (sortBy === 'time') {
+    items.sort((a, b) => (b.ts || b.published || '').localeCompare(a.ts || a.published || ''));
+  } else if (cur !== 'daily') {
+    items.sort((a, b) => (b.importance || 0) - (a.importance || 0) ||
+      (b.ts || '').localeCompare(a.ts || ''));
+  }
+
+  if (!items.length) {
+    list.innerHTML = `<div class="empty">${cur === 'fav' ? '还没收藏。看到有用的点右下角「收藏」，以后会优先推给你。' : '没有匹配的条目'}</div>`;
+    return;
+  }
+
+  list.innerHTML = items.map((it, i) =>
+    cardHTML(it, cur === 'daily' && i < 3)).join('');
+}
+
+function renderTabs() {
+  const tabs = document.getElementById('tabs');
+  const defs = [['daily', '今日必看'], ['all', '全部']]
+    .concat(ORDER.map(k => [k, (CATS[k] || [k])[0]]))
+    .concat([['fav', '我的收藏']]);
+  tabs.innerHTML = defs.map(([k, n]) =>
+    `<button class="tab ${k === cur ? 'on' : ''}" data-k="${k}">${n}</button>`).join('');
+  tabs.querySelectorAll('.tab').forEach(b => {
+    b.onclick = () => { cur = b.dataset.k; renderTabs(); render(); };
+  });
+}
+
+document.getElementById('q').addEventListener('input', e => {
+  kw = e.target.value.trim().toLowerCase();
+  render();
+});
+
+document.getElementById('sort').addEventListener('click', e => {
+  sortBy = sortBy === 'importance' ? 'time' : 'importance';
+  e.target.textContent = sortBy === 'importance' ? '按重要度' : '按时间';
+  render();
+});
+
+document.getElementById('list').addEventListener('click', e => {
+  const fav = e.target.closest('.fav');
+  if (fav) {
+    const link = fav.dataset.link;
+    const hit = ITEMS.find(i => i.link === link) || favs.find(f => f.link === link);
+    if (favSet.has(link)) {
+      favSet.delete(link);
+      favs = favs.filter(f => f.link !== link);
+    } else if (hit) {
+      favSet.add(link);
+      favs.push(snapshot(hit));
+    }
+    save(FAV_KEY, favs);
+    INTEREST = interest();
+    renderTabs(); render();
+    return;
+  }
+  const a = e.target.closest('h3 a');
+  if (a) {
+    const link = a.dataset.link;
+    if (!readSet.has(link)) {
+      readSet.add(link);
+      reads.push(link);
+      save(READ_KEY, reads);
+      const el = a.closest('.card');
+      if (el) el.classList.add('read');
+    }
+  }
+});
+
+renderContests();
+renderTabs();
+render();
+</script>
+</body>
+</html>
