@@ -179,6 +179,7 @@ SYSTEM = """你是一个挑剔的产品经理情报编辑。读者每天只看 6
 写作要求：
 - one_line：用你自己的话概括这条具体讲了什么，禁止照抄标题，不超过 35 字；
 - why：说清「这条具体能让他做什么」，禁止「对求职有帮助」「值得学习」这类套话，不超过 40 字；3 分及以下留空；
+- inline_text：原文要点抽取，用换行分隔 3-4 个短句，每个短句是一个**具体事实、数字、方法或结论**（不是空泛评价）。例如："月活 2 亿 新增创作者分成\ntoken 从 1.2k 压到 0.4k\n支持 20+ 工作流模板，已接入飞书/钉钉"；3 分及以下留空；
 - topic：4-8 个字的中文主题词，例如「AI 编程」「模型发布」「求职方法」，不要用 category 里的英文名；
 - tags：1 到 3 个，优先从给定的关注方向里选。
 
@@ -210,7 +211,7 @@ def _prompt(batch, profile, focus):
             + """
 
 请逐条评估，输出这种结构：
-{"items":[{"id":1,"importance":4,"topic":"AI 编程","one_line":"…","why":"…","tags":["AI 产品"]}]}
+{"items":[{"id":1,"importance":4,"topic":"AI 编程","one_line":"…","why":"…","inline_text":"要点1\n要点2\n要点3","tags":["AI 产品"]}]}
 
 必须为每个 id 都输出一条，不要遗漏，不要新增。"""},
     ]
@@ -307,6 +308,7 @@ def enrich(cfg, key, items, clusters, profile, focus):
                 "topic": _clean_text(row.get("topic"), 20),
                 "one_line": _clean_text(row.get("one_line"), 80),
                 "why": _clean_text(row.get("why"), 90),
+                "inline_text": (row.get("inline_text") or "").strip(),
                 "tags": [str(t)[:12] for t in (row.get("tags") or [])][:3],
                 "same_as": same,
             }

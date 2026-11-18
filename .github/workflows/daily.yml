@@ -20,7 +20,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install deps
-        run: pip install requests
+        run: pip install requests beautifulsoup4 lxml readability-lxml
 
       - name: Fetch + AI + build
         env:

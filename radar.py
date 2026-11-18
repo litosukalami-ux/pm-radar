@@ -22,6 +22,7 @@ import requests
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ai
+import fetcher
 from config import (AI, BLOCK_KEYWORDS, CATEGORIES, CATEGORY_ORDER, DAILY_MIN_IMPORTANCE,
                     DAILY_PICKS, DAILY_QUOTA, DEDUP_THRESHOLD, FOCUS_TOPICS,
                     READER_PROFILE, SOURCES, STAR_KEYWORDS)
@@ -155,9 +156,14 @@ COLUMNS = {
     "topic": "TEXT DEFAULT ''",
     "one_line": "TEXT DEFAULT ''",
     "why": "TEXT DEFAULT ''",
+    "inline_text": "TEXT DEFAULT ''",
+    "full_text": "TEXT DEFAULT ''",
+    "thumb": "TEXT DEFAULT ''",
+    "images": "TEXT DEFAULT '[]'",
     "tags": "TEXT DEFAULT ''",
     "dup_of": "TEXT",
     "ai_done": "INTEGER DEFAULT 0",
+    "seen": "INTEGER DEFAULT 0",
 }
 
 
@@ -310,8 +316,9 @@ def process_ai(since_iso=None):
                 merged += 1
             conn.execute(
                 """UPDATE items SET importance = ?, topic = ?, one_line = ?, why = ?,
-                          tags = ?, dup_of = ?, ai_done = 1 WHERE guid = ?""",
+                          inline_text = ?, tags = ?, dup_of = ?, ai_done = 1 WHERE guid = ?""",
                 (importance, topic, info.get("one_line", ""), info.get("why", ""),
+                 info.get("inline_text", ""),
                  json.dumps(info.get("tags", []), ensure_ascii=False),
                  dup, m["guid"]))
     conn.commit()
@@ -365,66 +372,100 @@ def _merge_by_same_as(clusters, result):
 def load_items(limit=600):
     conn = init_db()
     rows = conn.execute(
-        """SELECT title, link, source, category, summary, published, starred,
-                  importance, topic, one_line, why, tags, first_seen
+        """SELECT guid, title, link, source, category, summary, published, starred,
+                  importance, topic, one_line, why, tags, first_seen,
+                  inline_text, full_text, thumb, images, seen
            FROM items WHERE dup_of IS NULL
            ORDER BY published DESC LIMIT ?""", (limit,)
     ).fetchall()
     conn.close()
 
     out = []
+    now = datetime.now(CST).date()
     for r in rows:
-        if is_blocked((r[0] or "") + (r[4] or "")):
+        if is_blocked((r[1] or "") + (r[5] or "")):
             continue
         try:
-            tags = json.loads(r[11] or "[]")
+            tags = json.loads(r[12] or "[]")
         except (TypeError, ValueError):
             tags = []
+        try:
+            images = json.loads(r[17] or "[]")
+        except (TypeError, ValueError):
+            images = []
+        first_seen = datetime.fromisoformat(r[13]).astimezone(CST) if r[13] else None
         out.append({
-            "title": r[0], "link": r[1], "source": r[2], "category": r[3],
-            "summary": r[4] or "", "ts": r[5],
-            "published": datetime.fromisoformat(r[5]).astimezone(CST).strftime("%m-%d"),
-            "starred": bool(r[6]),
-            "importance": r[7] or 0,
-            "topic": r[8] or "",
-            "one_line": r[9] or "",
-            "why": r[10] or "",
+            "guid": r[0],
+            "title": r[1], "link": r[2], "source": r[3], "category": r[4],
+            "summary": r[5] or "", "ts": r[6],
+            "published": datetime.fromisoformat(r[6]).astimezone(CST).strftime("%m-%d"),
+            "starred": bool(r[7]),
+            "importance": r[8] or 0,
+            "topic": r[9] or "",
+            "one_line": r[10] or "",
+            "why": r[11] or "",
+            "inline_text": r[14] or "",
+            "full_text": r[15] or "",
+            "thumb": r[16] or "",
+            "images": images,
             "tags": tags,
-            "new": datetime.fromisoformat(r[12]).astimezone(CST).date() == datetime.now(CST).date(),
+            "seen": bool(r[18]),
+            "_first_seen": first_seen,  # 内部字段，pick_daily 用，不序列化到前端
+            "new": first_seen.date() == now if first_seen else False,
         })
     return out
 
 
 def pick_daily(items):
-    """AI 打分 + 兴趣方向 + 新鲜度，合起来挑今天最该看的几条。"""
-    now = datetime.now(timezone.utc)
+    """AI 打分 + 兴趣方向 + 新鲜度，合起来挑今天最该看的几条。
+
+    只从 first_seen 在「今天或昨天」的条目里挑，今天优先，不足时补昨天，
+    这样前几天看过的不会被重新推荐。
+    """
+    today = datetime.now(CST).date()
+    yesterday = today - timedelta(days=1)
+
     for it in items:
         it["daily"] = False
 
-    scored = []
+    # 分层筛选
+    today_pool, yesterday_pool = [], []
     for it in items:
-        age = now - datetime.fromisoformat(it["ts"])
-        if age > timedelta(days=4):
-            continue
         if it["importance"] < DAILY_MIN_IMPORTANCE:
             continue
+        fs = it.get("_first_seen")
+        if fs is None:
+            # 历史条目没有 first_seen → 兜底放到昨天池
+            yesterday_pool.append(it)
+            continue
+        fs_date = fs.astimezone(CST).date()
+        if fs_date == today:
+            today_pool.append(it)
+        elif fs_date == yesterday:
+            yesterday_pool.append(it)
+
+    def _score(it):
+        age = datetime.now(timezone.utc) - datetime.fromisoformat(it["ts"])
         hits = sum(1 for t in FOCUS_TOPICS
                    if t.lower() in (it["title"] + it["summary"] + it["topic"]).lower())
-        score = it["importance"] * 10 + hits * 2 + (3 if it["category"] == "contest" else 0)
-        score -= age.total_seconds() / 86400 * 1.5
-        it["score"] = score
-        scored.append(it)
+        s = it["importance"] * 10 + hits * 2 + (3 if it["category"] == "contest" else 0)
+        s -= age.total_seconds() / 86400 * 1.5
+        it["score"] = s
+        return it
 
-    scored.sort(key=lambda x: x["score"], reverse=True)
+    today_pool.sort(key=lambda x: _score(x)["score"], reverse=True)
+    yesterday_pool.sort(key=lambda x: _score(x)["score"], reverse=True)
+
+    # 先挑今天池，不够再用昨天补
+    scored = today_pool + [i for i in yesterday_pool
+                           if i["link"] not in {j["link"] for j in today_pool}]
 
     def can_add(it, topic_count, source_count):
-        # 同一主题最多两条，同一来源最多两条，避免整屏都是同一类东西
         return (topic_count.get(it["topic"], 0) < 2
                 and source_count.get(it["source"], 0) < 2)
 
     picked, used, topic_count, source_count = [], set(), {}, {}
 
-    # 先保证每个分类都有机会，再按分数补满
     for cat, quota in DAILY_QUOTA.items():
         if len(picked) >= DAILY_PICKS:
             break
@@ -480,6 +521,12 @@ def build():
         html = f.read()
 
     def dump(obj):
+        # 过滤内部字段（以 _ 开头）
+        if isinstance(obj, dict):
+            obj = {k: v for k, v in obj.items() if not k.startswith("_")}
+        elif isinstance(obj, list):
+            obj = [{k: v for k, v in it.items() if not k.startswith("_")}
+                   if isinstance(it, dict) else it for it in obj]
         return json.dumps(obj, ensure_ascii=False).replace("</", "<\\/")
 
     html = (html
@@ -500,17 +547,70 @@ def build():
     log(f"看板已生成：{OUT_PATH}（共 {len(items)} 条，今日必看 {picked} 条）")
 
 
+def fetch_winners(items):
+    """给今日必看的 6 条抓原文正文 + 封面图，存到 DB 里。已经抓过的跳过。"""
+    winners = [it for it in items if it.get("daily")]
+    todo = [w for w in winners if not (w.get("full_text") or w.get("inline_text"))]
+    if not todo:
+        return 0
+    log(f"正在抓 {len(todo)} 条原文正文……")
+
+    def _fetch_one(item):
+        title, text, imgs = fetcher.fetch_article(item["link"])
+        return item["guid"], text, imgs
+
+    fetched = 0
+    with cf.ThreadPoolExecutor(3) as ex:
+        for guid, text, imgs in ex.map(_fetch_one, todo):
+            if text and len(text) > 100:
+                conn = init_db()
+                thumb = imgs[0] if imgs else ""
+                conn.execute(
+                    """UPDATE items SET full_text = ?, images = ?, thumb = ? WHERE guid = ?""",
+                    (text, json.dumps(imgs, ensure_ascii=False), thumb, guid))
+                conn.commit()
+                conn.close()
+                fetched += 1
+    log(f"  抓到正文 {fetched}/{len(todo)} 条")
+    return fetched
+
+
+def expire_daily():
+    """每天删掉 14 天前的历史，DB 不无限膨胀。"""
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=14)).isoformat()
+    conn = init_db()
+    cur = conn.execute("DELETE FROM items WHERE first_seen < ? AND starred = 0", (cutoff,))
+    n = cur.rowcount
+    conn.commit()
+    conn.close()
+    if n:
+        log(f"清理历史：删除 {n} 条旧条目")
+    return n
+
+
 def main():
     if "--build" in sys.argv:
+        items = load_items()
+        pick_daily(items)
+        fetch_winners(items)
+        expire_daily()
         build()
         return
     if "--ai" in sys.argv:
         process_ai()
+        items = load_items()
+        pick_daily(items)
+        fetch_winners(items)
+        expire_daily()
         build()
         return
     log("开始抓取……\n")
     _, before = run_fetch()
     process_ai(before)
+    items = load_items()
+    pick_daily(items)
+    fetch_winners(items)
+    expire_daily()
     build()
 
 
