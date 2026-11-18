@@ -219,6 +219,9 @@ def save(conn, src, items):
 def run_fetch():
     conn = init_db()
     total_new = 0
+    before = conn.execute("SELECT MAX(first_seen) FROM items").fetchone()[0]
+    if not before:
+        before = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
     with cf.ThreadPoolExecutor(6) as ex:
         futures = [ex.submit(fetch_source, s) for s in SOURCES]
         for fut in cf.as_completed(futures):
@@ -231,19 +234,33 @@ def run_fetch():
             log(f"  [OK]   {src['name']:<16} 抓到 {len(items):>3} 条，新增 {new:>3} 条")
     conn.close()
     log(f"\n本次新增 {total_new} 条")
-    return total_new
+    # 返回 "这次 run_fetch 之前最新条目时间"，给 process_ai 用来只加工本次新增
+    return total_new, before
 
 
 # ---------------------------------------------------------------- AI 加工
 
-def _recent_rows(conn, days=5, limit=150):
-    since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
-    rows = conn.execute(
-        """SELECT guid, title, link, source, category, summary, published
-           FROM items
-           WHERE ai_done = 0 AND dup_of IS NULL AND published >= ?
-           ORDER BY published DESC LIMIT ?""", (since, limit)
-    ).fetchall()
+def _recent_rows(conn, since_iso=None, limit=150):
+    """取待 AI 加工的条目。
+
+    since_iso 有值时：只跑 first_seen >= since_iso 的（本次 run_fetch 新增）。
+    没有时跑存量里 ai_done=0 的（--ai 手动触发时的兜底）。
+    """
+    if since_iso:
+        rows = conn.execute(
+            """SELECT guid, title, link, source, category, summary, published
+               FROM items
+               WHERE ai_done = 0 AND dup_of IS NULL AND first_seen >= ?
+               ORDER BY published DESC LIMIT ?""", (since_iso, limit)
+        ).fetchall()
+    else:
+        since = (datetime.now(timezone.utc) - timedelta(days=5)).isoformat()
+        rows = conn.execute(
+            """SELECT guid, title, link, source, category, summary, published
+               FROM items
+               WHERE ai_done = 0 AND dup_of IS NULL AND published >= ?
+               ORDER BY published DESC LIMIT ?""", (since, limit)
+        ).fetchall()
     return [{
         "guid": r[0], "title": r[1], "link": r[2], "source": r[3],
         "category": r[4], "summary": r[5] or "", "published": r[6],
@@ -255,9 +272,9 @@ def _fallback_score(item):
     return 3 if is_starred(item["title"] + item["summary"]) else 2
 
 
-def process_ai():
+def process_ai(since_iso=None):
     conn = init_db()
-    items = _recent_rows(conn)
+    items = _recent_rows(conn, since_iso)
     if not items:
         log("没有需要 AI 加工的条目。")
         conn.close()
@@ -492,8 +509,8 @@ def main():
         build()
         return
     log("开始抓取……\n")
-    run_fetch()
-    process_ai()
+    _, before = run_fetch()
+    process_ai(before)
     build()
 
 

@@ -14,6 +14,7 @@ import math
 import os
 import re
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from itertools import combinations
 
 import requests
@@ -258,17 +259,26 @@ def _tidy(info, title):
 
 
 def enrich(cfg, key, items, clusters, profile, focus):
-    """对每个簇调用一次模型。返回 {cluster_index: {...}}，失败返回 {}。"""
+    """对每个簇调用一次模型，批处理并发执行（默认 4 路）。
+
+    返回 {cluster_index: {...}}，失败返回 {}。
+    """
     reps = []
     for group in clusters:
-        # 用组里信息量最大的那条当代表
         rep = max((items[i] for i in group), key=lambda x: len(x.get("summary") or ""))
         reps.append(rep)
 
-    out = {}
-    size = max(1, cfg.get("batch_size", 35))
+    size = max(1, cfg.get("batch_size", 12))
+    concurrency = cfg.get("concurrency", 4)
+
+    # 先把所有批次切好
+    batches = []
     for start in range(0, len(reps), size):
-        batch = reps[start:start + size]
+        batches.append((start, reps[start:start + size]))
+
+    out = {}
+    def _run(start, batch):
+        """单批执行：调模型 + 解析 + 校准。返回 (start, got_list)。"""
         try:
             raw = chat(cfg, key, _prompt(batch, profile, focus))
             objects = _json_block(raw)
@@ -277,7 +287,7 @@ def enrich(cfg, key, items, clusters, profile, focus):
                 rows.extend(obj.get("items") or obj.get("data") or [])
         except Exception as e:
             print(f"  [AI 失败] 第 {start // size + 1} 批：{type(e).__name__}: {e}")
-            continue
+            return start, []
 
         got = []
         for row in rows:
@@ -304,8 +314,16 @@ def enrich(cfg, key, items, clusters, profile, focus):
             got.append((start + idx, info, batch[idx]["title"]))
 
         _calibrate(got)
-        for idx, info, _ in got:
-            out[idx] = info
+        return start, got
+
+    # 并发跑所有批次
+    with ThreadPoolExecutor(max_workers=concurrency) as ex:
+        futures = {ex.submit(_run, s, b): s for s, b in batches}
+        for fut in as_completed(futures):
+            _, got = fut.result()
+            for idx, info, _ in got:
+                out[idx] = info
+
     return out
 
 

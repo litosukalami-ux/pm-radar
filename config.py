@@ -92,9 +92,11 @@ AI = {
     "key_file": "zhipu_key.txt",
     "base_url": "https://open.bigmodel.cn/api/paas/v4/chat/completions",
     "model": "glm-4-flash",
-    "timeout": 120,
-    # 每次送给模型多少条。太小浪费调用，太大容易超时 / 输出被截断
-    "batch_size": 12,
+    "timeout": 90,
+    # 每次送给模型多少条。25 是 sweet spot：批次数够用、单次输出不截断
+    "batch_size": 25,
+    # 并发调模型的线程数。glm-4-flash 免费版建议 2，再多容易超时
+    "concurrency": 2,
 }
 
 # 「我是谁、我要什么」。这段会放进提示词，直接决定 AI 怎么判断重要度。
