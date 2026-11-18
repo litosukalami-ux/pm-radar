@@ -20,35 +20,52 @@ def extract_main(html, base_url):
                     "header", "form", "input", "button", "aside"]):
         t.decompose()
 
+    main_html = ""
     if HAS_READABILITY:
         doc = Document(html)
-        summary = doc.summary(html_partial=True)
-        soup2 = BeautifulSoup(summary, "lxml")
-    else:
-        # 启发式：找 id/class 里带 article/post/content/main 的 div
-        target = None
-        for cand in soup.find_all(["article", "div", "section"]):
-            cls = (cand.get("class") or []) + ([cand.get("id")] if cand.get("id") else [])
-            cls_text = " ".join(cls).lower()
-            if any(k in cls_text for k in ["article", "content", "post", "main", "entry"]):
-                cand_score = len(cand.get_text(strip=True)) + len(cand.find_all("p")) * 30
-                if target is None or cand_score > target[1]:
-                    target = (cand, cand_score)
-        if target:
-            summary = str(target[0])
+        try:
+            summary = doc.summary(html_partial=True)
             soup2 = BeautifulSoup(summary, "lxml")
-        else:
-            soup2 = soup
+            main_html = summary
+        except Exception:
+            soup2 = BeautifulSoup("", "lxml")
+    else:
+        soup2 = BeautifulSoup("", "lxml")
 
     # 抽正文文本
     text = soup2.get_text("\n", strip=True)
     text = re.sub(r"\n{3,}", "\n\n", text)
     text = re.sub(r"[ \t]{2,}", " ", text)
-    text = text[:2500]  # 站内阅读只保留前 2500 字，足够看要点
+
+    # Fallback：readability 找不到容器（< 100 字），就用全页可见文本
+    if len(text) < 100:
+        text = soup.get_text("\n", strip=True)
+        text = re.sub(r"\n{3,}", "\n\n", text)
+        text = re.sub(r"[ \t]{2,}", " ", text)
+        # 去掉明显导航/页脚行（短行 + 重复关键词）
+        noise = ("登录", "注册", "首页", "关于我们", "联系我们", "版权所有", "隐私政策",
+                 "服务条款", "下载", "APP", "官方社区", "Skills", "训练营")
+        lines = text.split("\n")
+        filtered = []
+        nav_count = 0
+        for ln in lines:
+            ln = ln.strip()
+            if not ln:
+                continue
+            if len(ln) < 6 and any(n in ln for n in noise):
+                nav_count += 1
+                continue
+            if nav_count > 15 and not any(c in ln for c in ["。", "！", "？", ":", "："]):
+                # 导航密集区跳过
+                continue
+            filtered.append(ln)
+        text = "\n".join(filtered)
+
+    text = text[:3000]  # 站内阅读上限
 
     # 抽图片（最大 6 张）
     imgs = []
-    for img in soup2.find_all("img"):
+    for img in soup.find_all("img"):
         src = img.get("src") or img.get("data-src") or img.get("data-original") or ""
         if not src:
             continue
@@ -66,14 +83,19 @@ def extract_main(html, base_url):
 
 def fetch_article(url, timeout=20):
     """抓原文 HTML，返回 (title, text, [imgs])。失败返回 ("", "", [])。"""
+    headers = {
+        "User-Agent": UA,
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+        "Accept-Encoding": "gzip, deflate",
+        "Referer": urljoin(url, "/"),
+        "Connection": "keep-alive",
+    }
     try:
-        r = requests.get(url, headers={"User-Agent": UA,
-                                        "Accept": "text/html,application/xhtml+xml",
-                                        "Accept-Language": "zh-CN,zh;q=0.9"},
-                         timeout=timeout)
+        r = requests.get(url, headers=headers, timeout=timeout, allow_redirects=True)
         r.raise_for_status()
         r.encoding = r.apparent_encoding or "utf-8"
-    except Exception as e:
+    except Exception:
         return "", "", []
 
     soup = BeautifulSoup(r.text[:500000], "lxml")

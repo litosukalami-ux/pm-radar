@@ -548,9 +548,9 @@ def build():
 
 
 def fetch_winners(items):
-    """给今日必看的 6 条抓原文正文 + 封面图，存到 DB 里。已经抓过的跳过。"""
+    """给今日必看的 6 条抓原文正文 + 封面图，存到 DB 里。已经有 full_text 的跳过。"""
     winners = [it for it in items if it.get("daily")]
-    todo = [w for w in winners if not (w.get("full_text") or w.get("inline_text"))]
+    todo = [w for w in winners if not w.get("full_text")]
     if not todo:
         return 0
     log(f"正在抓 {len(todo)} 条原文正文……")
