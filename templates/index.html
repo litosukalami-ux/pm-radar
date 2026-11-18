@@ -31,11 +31,31 @@
 
   /* ---------- 头部 ---------- */
   header { padding: 46px 0 10px; }
+  .head-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+  .head-row .h { flex: 1; min-width: 0; }
   h1 { font-size: 32px; margin: 0 0 12px; letter-spacing: -0.6px; font-weight: 700; }
   h1 span { color: var(--accent); }
   .sub { color: var(--muted); font-size: 13.5px; margin: 0; line-height: 1.9; }
   .sub b { color: var(--ink); font-weight: 600; }
   .sub .dot { margin: 0 6px; color: #D5CEC3; }
+
+  .refresh { display: inline-flex; align-items: center; gap: 6px;
+             border: 1px solid var(--line); background: var(--card);
+             color: var(--ink); border-radius: 999px; padding: 7px 14px;
+             font-size: 13px; font-family: inherit; cursor: pointer;
+             white-space: nowrap; transition: all .15s; text-decoration: none; }
+  .refresh:hover { border-color: var(--accent); color: var(--accent); }
+  .refresh:active { transform: scale(.97); }
+  .refresh .spin { display: inline-block; animation: none; }
+  .refresh.busy .spin { animation: spin 1s linear infinite; }
+  .refresh.done { border-color: #16A34A; color: #16A34A; }
+  .refresh.pulse { position: relative; animation: pulse 2s infinite; }
+  .refresh.pulse::after { content: ''; position: absolute; right: -2px; top: -2px;
+                          width: 10px; height: 10px; border-radius: 50%;
+                          background: #16A34A; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(22,163,74,.4); }
+                     50%    { box-shadow: 0 0 0 8px rgba(22,163,74,0); } }
 
   h2 {
     font-size: 16px; margin: 40px 0 14px; font-weight: 600;
@@ -129,12 +149,19 @@
 <body>
 <div class="wrap">
   <header>
-    <h1>产品<span>雷达</span></h1>
-    <p class="sub">
-      每天 __PICKED__ 条，AI 从 __COUNT__ 条里挑的
-      <span class="dot">·</span> 更新于 __UPDATED__
-      <span class="dot">·</span> 已加工 <b>__AI_READY__</b> 条
-    </p>
+    <div class="head-row">
+      <div class="h">
+        <h1>产品<span>雷达</span></h1>
+        <p class="sub">
+          每天 __PICKED__ 条，AI 从 __COUNT__ 条里挑的
+          <span class="dot">·</span> 更新于 __UPDATED__
+          <span class="dot">·</span> 已加工 <b>__AI_READY__</b> 条
+        </p>
+      </div>
+      <button class="refresh" id="refreshBtn" title="手动触发云端重新抓取与 AI 筛选">
+        <span class="spin">↻</span><span>手动刷新</span>
+      </button>
+    </div>
   </header>
 
   <h2>还没开始的比赛</h2>
@@ -162,6 +189,51 @@ const CONTESTS = __CONTESTS__;
 const CATS = __CATS__;
 const ORDER = __ORDER__;
 const FOCUS = __FOCUS__;
+
+/* 刷新相关 */
+const REPO = '__REPO__';
+const CURRENT_UPDATED = '__UPDATED__';
+const refreshBtn = document.getElementById('refreshBtn');
+let checkTimer = null, checking = false;
+
+refreshBtn.addEventListener('click', () => {
+  if (checking) { stopCheck(); return; }
+  // 打开 GitHub Actions 页面让用户点绿色 Run workflow 按钮
+  const url = `https://github.com/${REPO}/actions/workflows/daily.yml`;
+  window.open(url, '_blank', 'noopener');
+  startCheck();
+});
+
+function startCheck() {
+  checking = true;
+  refreshBtn.classList.add('busy');
+  refreshBtn.querySelectorAll('span')[1].textContent = '检查中…';
+  checkOnce();
+  checkTimer = setInterval(checkOnce, 20000);  // 20s 一次
+}
+function stopCheck() {
+  checking = false; clearInterval(checkTimer); checkTimer = null;
+  refreshBtn.classList.remove('busy');
+  refreshBtn.querySelectorAll('span')[1].textContent = '手动刷新';
+}
+async function checkOnce() {
+  try {
+    const resp = await fetch(window.location.pathname + '?t=' + Date.now(),
+      { cache: 'no-store' });
+    if (!resp.ok) return;
+    const text = await resp.text();
+    const m = text.match(/更新于\s*(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2})/);
+    if (m && m[1] !== CURRENT_UPDATED) {
+      stopCheck();
+      refreshBtn.classList.add('done', 'pulse');
+      refreshBtn.querySelectorAll('span')[1].textContent = '有新数据 · 点此刷新';
+      refreshBtn.onclick = () => window.location.reload();
+    }
+  } catch (e) {}
+}
+
+/* 页面打开时，每 60s 自动检查一次，不打扰用户 */
+setInterval(() => { if (!checking) checkOnce(); }, 60000);
 
 const FAV_KEY = 'radar.favs.v2';
 const READ_KEY = 'radar.read.v2';

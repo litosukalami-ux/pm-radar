@@ -470,6 +470,7 @@ def build():
             .replace("__COUNT__", str(len(items)))
             .replace("__PICKED__", str(picked))
             .replace("__AI_READY__", str(ai_ready))
+            .replace("__REPO__", "litosukalami-ux/pm-radar")
             .replace("__FOCUS__", dump(FOCUS_TOPICS))
             .replace("__ITEMS__", dump(items))
             .replace("__CONTESTS__", dump(contests))
